@@ -14,18 +14,23 @@ $subreddits | ForEach-Object{
     # If the top post has more upvotes than the (current) most upvoted
     if($sub_upvotes -gt $upvotes){
         $upvotes = $sub_upvotes                                         # Set as most upvoted top post
-        $url = $json.data.children[0].data.preview.images[0].source.url # Navigate through the JSON to get the URL
+        $url = $json.data.children[0].data.preview.images[0].source.url # Navigate through the JSON to get the URL		
     }
-
+    
     # Set the url to the real downloadurl if the picture is from uhdwallpapers
-    if($json.data.children[0].data.url.indexOf("uhdwallpapers.org"))
+    if(([int]$json.data.children[0].data.url.indexOf("uhdwallpapers.org")) > 0)
     {
         $url=$json.data.children[0].data.url.Replace("/wallpaper/","/download/")+"3840x2160/"
+    }
+	
+	if(([int]$json.data.children[0].data.url.indexOf("flickr.com")) > 0)
+    {
+        $url=$json.data.children[0].data.url		
     }
 }
 
 # Replace &amp with & in the URL; More info : https://old.reddit.com/r/redditdev/comments/9ncg2r/changes_in_api_pictures/
-$url = $url.Replace('&amp;', '&') 
+$url = [uri]::EscapeUriString($url)
                              
 # Get the filename
 $todaysdate = Get-Date -Format "yyyy-MM-dd"                                   # Get the date (file will be saved as date)
@@ -33,18 +38,24 @@ $extension = $json.data.children[0].data.thumbnail -replace '.+\.(\w+)', '$1' # 
 $filename = "$todaysdate.$extension"                                          # Combine the date + the extension for the filename
 $path = Join-Path $folder $filename                                           # Complete outfile path (folder param + filename)
 $todaydate = Get-Date -Format "yyyy-MM-dd HH-mm"                              # Get the date (file will be saved as date)
-$extension = $url -replace '.*\.(.*?)\?.*','$1'                               # Get the file extension from the URL
 
 # Look at the headers for a filename
-$matches = ([regex]"(?:"")(.+)(?:"")").match((Invoke-WebRequest -Uri $url -Method Head).Headers["Content-Disposition"])
-if($matches.Groups)
+$matches = ([regex]"(?:"")(.+)(?:"")").match((Invoke-WebRequest -UseBasicParsing -Uri $url -Method Head).Headers["Content-Disposition"])
+if($matches.Groups -and $matches.Groups[1].Value.Length>0)
 {
     # Set the path to the found filename
     $path = Join-Path $folder $matches.Groups[1].Value
 }
+else
+{
+    $pm = $json.data.children[0].data.permalink
+    $num = $pm.Substring(0, $pm.Length-1).LastIndexOf('/')+1
+    $fullFileName = $pm.Substring($num, $pm.Length-$num).Replace('/', '.') + $extension
+    $path = Join-Path $folder $fullFileName;
+}
 
 # Download and save the file
-Invoke-WebRequest $url -OutFile $path
+Invoke-WebRequest -UseBasicParsing $url -OutFile $path
 
 $os = Get-ChildItem -Path Env: | Where-Object { $_.Key -eq "OS" } | Select-Object -ExpandProperty Value
 
@@ -75,4 +86,3 @@ if ($IsMacOS) {
     $setmacoswallpaper = "osascript -e 'tell application \`"Finder\`" to set desktop picture to POSIX file \`"$path\`"'"
     Invoke-Expression $setmacoswallpaper
 }
-
